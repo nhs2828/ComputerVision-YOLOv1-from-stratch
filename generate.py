@@ -52,16 +52,17 @@ def createCircle(image, x, y, min_radius=5):
     max_height, max_longer, depth = image.shape
     max_radius = min(x, y, max_height-y, max_longer-x)//2
     while True:
-        # print("Stuck here circle")
         if max_radius > min_radius:
             radius = np.random.randint(min_radius, max_radius)
         else:
             radius = min_radius
         rr, cc = ski.draw.disk((x, y), radius=radius)
-        if radius == min_radius and ((rr==max_longer).sum() != 0 or (cc==max_height).sum()!=0):
+        # if the values are negatives, we would draw the circle to the other side
+        if radius == min_radius and ((rr==max_longer).sum() != 0 or (cc==max_height).sum()!=0 or (rr<0).sum() == 0 or (cc<0).sum()==0):
             raise OverlapException()
         if (rr==max_longer).sum() == 0  and (cc==max_height).sum()==0 and (rr<0).sum() == 0  and (cc<0).sum()==0:
             break
+        # print(f"Stuck here circle: rad = {radius}, min_rad = {min_radius}. NB neg {(rr<0).sum()}, {(cc<0).sum()}")
     # Check overlap
     if np.min(image[rr, cc]) < 255: # if not white
     # if (image[rr, cc] == 255).sum() != len(image[rr, cc]): # if not white
@@ -131,6 +132,14 @@ def genData(path, nb_Img, width, height, depth):
 
 
 if __name__ == '__main__':
+    # im, _ = createImage(400, 400, 1, 5)
+    # print("created")
+    # while True:
+    #     cv2.imshow("test", im)
+    #     key = cv2.waitKey(1)
+    #     if key == ord('q'):
+    #         break
+    # cv2.destroyAllWindows()
     nbImg = 1000
     width = 400
     height = 400
