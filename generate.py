@@ -6,7 +6,6 @@ import random
 import json
 import os
 import shutil
-from tqdm import tqdm
 
 
 Label = collections.namedtuple('Label', ['classe', 'x', 'y', 'w', 'h']) # x-center, y-center, width, height
@@ -15,8 +14,11 @@ Label = collections.namedtuple('Label', ['classe', 'x', 'y', 'w', 'h']) # x-cent
 class OverlapException(Exception):
     pass
 
+MIN_LEN_SQUARE = 4
+MIN_RADIUS = 5
 
-def createSquare(image, x, y, min_len_side=4):
+
+def createSquare(image, x, y, min_len_side=MIN_LEN_SQUARE):
     """
         @image          : image on which we want to draw a square
         @x, y0        : top left coordonate of the square
@@ -43,7 +45,7 @@ def createSquare(image, x, y, min_len_side=4):
     return Label('square', x_center, y_center, len_side, len_side)
 
 
-def createCircle(image, x, y, min_radius=5):
+def createCircle(image, x, y, min_radius=MIN_RADIUS):
     """
         @image          : image on which we want to draw a circle
         @x, y0        : center coord of the circle
@@ -58,11 +60,11 @@ def createCircle(image, x, y, min_radius=5):
             radius = min_radius
         rr, cc = ski.draw.disk((x, y), radius=radius)
         # if the values are negatives, we would draw the circle to the other side
-        if radius == min_radius and ((rr==max_longer).sum() != 0 or (cc==max_height).sum()!=0 or (rr<0).sum() == 0 or (cc<0).sum()==0):
+        if radius == min_radius and ((rr==max_longer).sum() != 0 or (cc==max_height).sum()!=0 or (rr<0).sum() != 0 or (cc<0).sum()!=0):
             raise OverlapException()
         if (rr==max_longer).sum() == 0  and (cc==max_height).sum()==0 and (rr<0).sum() == 0  and (cc<0).sum()==0:
             break
-        # print(f"Stuck here circle: rad = {radius}, min_rad = {min_radius}. NB neg {(rr<0).sum()}, {(cc<0).sum()}")
+        print(f"Stuck here circle: rad = {radius}, min_rad = {min_radius}. NB neg {(rr<0).sum()}, {(cc<0).sum()}")
     # Check overlap
     if np.min(image[rr, cc]) < 255: # if not white
     # if (image[rr, cc] == 255).sum() != len(image[rr, cc]): # if not white
@@ -79,8 +81,8 @@ def createImage(width, height, depth, nb_object):
     img = 255*np.ones((width, height, depth)).astype(np.uint8)
     labels = []
     for _ in range(nb_object):
-        x = np.random.randint(width)
-        y = np.random.randint(height)
+        x = np.random.randint(width-min(MIN_LEN_SQUARE,MIN_RADIUS))
+        y = np.random.randint(height-min(MIN_LEN_SQUARE,MIN_RADIUS))
 
         gen = random.choice(GENERATOR)
         # gen = createSquare
@@ -119,6 +121,7 @@ def genData(path, nb_Img, width, height, depth):
     for i in range(len(Images)):
         cv2.imwrite(path+f'img{i}.png', Images[i])
     path_labels = os.path.join(path, 'annotation.json')
+    # path_labels = path+'annotation.json'
     print("Writing annotations")
     with open(path_labels, 'w') as f_out:
         f_out_labels = []
