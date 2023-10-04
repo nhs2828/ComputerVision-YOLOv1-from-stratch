@@ -144,8 +144,8 @@ if __name__ == '__main__':
     #         break
     # cv2.destroyAllWindows()
     nbImg = 1000
-    width = 400
-    height = 400
+    width = 448
+    height = 448
     depth = 1
     path = 'data/'
     genData(path=path,\
