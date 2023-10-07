@@ -5,26 +5,6 @@ from tensorflow.keras.layers import LeakyReLU, Conv2D, MaxPooling2D, BatchNormal
 HIDDEN_LAYER_ACTIVATION = LeakyReLU(alpha = 0.1)
 
 # output shape [(W-K+2P)/S]+1
-MODEL_CONFIG = [
-    (64, 7, 2, 3),      # 448 -> 224
-    "M",                # 224 -> 112
-    (192, 3, 1, 1),     # 112 -> 56
-    "M",                # 56 -> 28
-    (128, 1, 1, 0),     # 28 -> 28
-    (256, 3, 1, 1),     # 28 -> 28
-    (256, 1, 1, 0),     # 28 -> 28
-    (512, 3, 1, 1),     # 28 -> 28
-    "M",                # 28 -> 14
-    [(256, 1, 1, 0), (512, 3, 1, 1), 4], # 4 times 14 -> 14
-    (512, 1, 1, 0),     # 14 -> 14
-    (1024, 3, 1, 1),    # 28 -> 14
-    "M",                # 14 -> 7
-    [(512, 1, 1, 0), (1024, 3, 1, 1), 2], # 2 times 7 -> 7
-    (1024, 3, 1, 1),    # 7 -> 7
-    (1024, 3, 2, 1),    #
-    (1024, 3, 1, 1),
-    (1024, 3, 1, 1),
-]
 
 class MyCustomLayer(tf.keras.layers.Layer):
     def __init__(self, nb_boxes, nb_classes):
