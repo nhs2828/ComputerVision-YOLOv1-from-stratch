@@ -3,6 +3,8 @@ import cv2
 import glob
 import numpy as np
 import copy
+import tensorflow as tf
+from collections import Counter
 
 IMG_SIZE = 448
 NB_CELL = 7
@@ -17,7 +19,7 @@ CLASSES = {0: 'prohibitory', 1: 'danger', 2: 'mandatory', 3: 'other'} # well, th
 
 ######################## Get a dictionary of classes
 def getClasses():
-    classes = []
+    classes = {}
     with open("data/classes.names", "r") as f:
         for i, line in enumerate(f.readlines()):
             classes[i] = line.strip()
@@ -178,14 +180,14 @@ def loss_yolo(y, ypred):
 
     ### confidance loss
     loss_confidance = 0
-    xywh_true = y[..., 1: 1+4] # (B, C, C, 4)
+    # xywh_true = y[..., 1: 1+4] # (B, C, C, 4)
     for i in range(NB_BOXES):
         pred_obj_current_box = tf.expand_dims(ypred[..., i], axis=-1) # (B, C, C, 1)
-        current_box_position = NB_BOXES + i*4
-        xywh_pred = ypred[..., current_box_position: current_box_position+4] # (B, C, C, 4)
-        iou = IoU(xywh_pred, xywh_true) # (B, C, C, 1)
-        loss_confidance += tf.reduce_sum(Iobj*tf.square(pred_obj_current_box-iou))
-        loss_confidance += ALPHA_NOOBJ*tf.reduce_sum((1-Iobj)*tf.square(pred_obj_current_box-iou))
+        # current_box_position = NB_BOXES + i*4
+        # xywh_pred = ypred[..., current_box_position: current_box_position+4] # (B, C, C, 4)
+        # iou = IoU(xywh_pred, xywh_true) # (B, C, C, 1)
+        loss_confidance += tf.reduce_sum(Iobj*tf.square(Iobj-pred_obj_current_box))
+        loss_confidance += ALPHA_NOOBJ*tf.reduce_sum((1-Iobj)*tf.square(Iobj-pred_obj_current_box))
     
     ### classification loss
     classe_pred = ypred[..., NB_BOXES*5: NB_BOXES*5+NB_CLASSES] # (B, C, C, nbClasses)
@@ -195,16 +197,7 @@ def loss_yolo(y, ypred):
     loss = ALPHA_COORD*loss_coord + loss_confidance + loss_classification
     return loss
 
-
-def non_maximum_suppression(pred, IOU_threshold = 0.5, confidance_threshold = 0.4):
-  """
-    Interpretation the output to image scale values, then apply NMS algo
-    Input:
-      pred: 3-D Tensor (Cell, Cell, 5*nb_boxes + nb_classes) p_1, .., p_i, x_1, y_1, w_1, h_1, ..., x_i, y_i, w_i, h_i, c_1, ..., c_n
-    Output:
-      out: List of boxes whose coordinates are relative to IMAGE
-  """
-  def mini_iou(box1, box2):
+def iou_boxes(box1, box2):
     x1, y1 = max(box1[0], box2[0]), max(box1[1], box2[1])
     x2, y2 = min(box1[2], box2[2]), min(box1[3], box2[3])
 
@@ -219,7 +212,14 @@ def non_maximum_suppression(pred, IOU_threshold = 0.5, confidance_threshold = 0.
     union = area_1 + area_2 - area_intersection + 1e-6
     return area_intersection/union
 
-
+def non_maximum_suppression(pred, IOU_threshold = 0.5, confidance_threshold = 0.4):
+  """
+    Interpretation the output to image scale values, then apply NMS algo
+    Input:
+      pred: 3-D Tensor (Cell, Cell, 5*nb_boxes + nb_classes) p_1, .., p_i, x_1, y_1, w_1, h_1, ..., x_i, y_i, w_i, h_i, c_1, ..., c_n
+    Output:
+      out: List of boxes whose coordinates are relative to IMAGE
+  """
   B = []
   for i in range(len(pred)):
     for j in range(len(pred[0])):
@@ -227,7 +227,7 @@ def non_maximum_suppression(pred, IOU_threshold = 0.5, confidance_threshold = 0.
       for b in range(NB_BOXES):
         if pred[i, j, b] >= confidance_threshold:
           p = pred[i, j, b]
-          x, y, w, h = pred[i, j, NB_BOXES+b*4 : NB_BOXES+b*4+4]
+          x, y, w, h = pred[i, j, NB_BOXES+b*4], pred[i, j, 1+NB_BOXES+b*4], pred[i, j, 2+NB_BOXES+b*4], pred[i, j, 3+NB_BOXES+b*4]
           x = x*CELL_SIZE+i*CELL_SIZE # reverse to true value [0-IMG_SIZE]
           y = y*CELL_SIZE+j*CELL_SIZE # reverse to true value [0-IMG_SIZE]
           w, h = w*IMG_SIZE, h*IMG_SIZE
@@ -242,8 +242,120 @@ def non_maximum_suppression(pred, IOU_threshold = 0.5, confidance_threshold = 0.
     D.append(candidat)
     inx_to_remove = []
     for i in range(len(B)):
-      if mini_iou(candidat[1:5], B[i][1: 5]) >= IOU_threshold:
+      if iou_boxes(candidat[1:5], B[i][1: 5]) >= IOU_threshold:
         inx_to_remove.append(i)
     B = [B[i] for i in range(len(B)) if i not in inx_to_remove]
   return D
+
+
+
+#### MAP
+"""
+    For a request (here is a class)
+    Given the reponses by the network for a request, max N reponse
+    _R_ is the ensemble of pertinent info, in this context is the number of true boxes in the image
+    _Q_ is the ensemble of requests, here is the number of classes
+    R_(d_i)_q in [0 - 1]
+    - Precision at k: P@k(q) = (1/k)*sum(R_(d_i)_q) for i from 1 to k
+    - Recall at k: R@k(q) = sum(R_(d_i)_q) / card(_R_)
+    - Average Precision: AvgP(q) = sum(R_(d_i)_q * P@k(q)) / n_q+     ----- n_q+ number of relevant boxes of class q of the image or card(_R_)
+    - MAP = sum(AvgP(q_i)) / card(_Q_)
+"""
+
+
+def MAP(y_true, ypred, iou_thresh = 0.5):
+    """
+    Input:
+        y           : 5-D Tensor (Batch, Cell, Cell, 5 + nb_classes) p, x, y, w, h, classes
+        ypred       : 5-D Tensor (Batch, Cell, Cell, 5*NB_boxes + nb_classes) p1, .. pn, x1, y1, w1, h1, x2 ..... classes
+        iou_thresh  : thresh to determine whether the box is true positive 
+    Output:
+        MAP         : mean average precision
+    """
+    list_pred = []
+    list_true = []
+    # we need to apply Non maximum suppression to ypred
+    for i in range(len(ypred)):
+        list_boxes =  non_maximum_suppression(ypred[i]) # each box contains p, x1, y1, x2, y2, class
+        if list_boxes != []:
+            for j in range(len(list_boxes)):
+                list_boxes[j].insert(0, i) # add index of image to the box
+            list_pred.extend(list_boxes) # add the boxes in list_pred
+    # transform y to list of boxes
+    for b in range(len(y_true)):
+        for i in range(NB_CELL):
+            for j in range(NB_CELL):
+                if y_true[b, i, j, 0] == 1:
+                    x, y, w, h = y_true[b, i, j, 1 : 1+4]
+                    x = x*CELL_SIZE+i*CELL_SIZE # reverse to true value [0-IMG_SIZE]
+                    y = y*CELL_SIZE+j*CELL_SIZE # reverse to true value [0-IMG_SIZE]
+                    w, h = w*IMG_SIZE, h*IMG_SIZE
+                    x1, y1 = x-w/2, y-h/2
+                    x2, y2 = x+w/2, y+h/2
+                    cl = y_true[b, i, j, 5: 5+NB_CLASSES]
+                    cl = int(tf.argmax(cl))
+                    list_true.append([b, x1, y1, x2, y2, cl])
+    
+    # list of AVG of each class
+    average_precisions = []
+
+    for cl in range(NB_CLASSES):
+        detections = []
+        ground_truths = []
+
+        # find all boxes of current class
+        for detection in list_pred:
+            if detection[-1] == cl:
+                detections.append(detection)
+
+        for box_true in list_true:
+            if box_true[-1] == cl:
+                ground_truths.append(box_true)
+
+        # count number of true boxes for each image
+        nb_boxes = Counter([gt_box[0] for gt_box in ground_truths])
+
+        # create a dict, key are image index, value are array [0, 0, 0] to mark the encouter of boxes
+        for key, number_boxes in nb_boxes.items():
+            nb_boxes[key] = tf.zeros(number_boxes)
+
+        # sort by probabilitiy
+        detections.sort(key=lambda x: x[1], reverse=True)
+        # true positive, aka relevant of each box {0, 1}
+        TP = tf.zeros((len(detections)))
+        total_true_boxes = len(ground_truths)
+        
+        # if empty we skip
+        if total_true_boxes == 0:
+            continue
+
+        for detection_idx, detection in enumerate(detections):
+            # take out the true boxes of the image containing the detection
+            ground_truth_img = [
+                box for box in ground_truths if box[0] == detection[0]
+            ]
+
+            best_iou = 0
+
+            for idx, gt in enumerate(ground_truth_img):
+                iou = iou_boxes(detection[2:2+4], gt[2:2+4]) # x is at index 2, take 4 info x1, y1, x2, y2
+                if iou > best_iou:
+                    best_iou = iou
+                    best_gt_idx = idx
+
+            if best_iou > iou_thresh:
+                # only detect ground truth detection once, the list is sorted so this one has the highest proba
+                if nb_boxes[detection[0]][best_gt_idx] == 0:
+                    # true positive and add this bounding box to seen
+                    TP[detection_idx] = 1
+                    nb_boxes[detection[0]][best_gt_idx] = 1
+
+        TP_cumsum = tf.cumsum(TP, axis=0)
+        tmp = tf.range(1, len(TP_cumsum)+1) # 1, 2, 3, .... nb_detection
+        tmp = tf.cast(tmp, tf.float32) # redefine dtype for calculs
+        precisions = tf.divide(TP_cumsum, tmp)
+        TP = tf.cast(TP, tf.float32) # redefine dtype for calculs
+        average_precisions.append(tf.reduce_sum(tf.multiply(precisions, TP))/total_true_boxes)
+
+    return sum(average_precisions) / len(average_precisions)
 
