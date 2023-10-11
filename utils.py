@@ -295,14 +295,12 @@ def MAP(y_true, ypred, iou_thresh = 0.5):
                     cl = y_true[b, i, j, 5: 5+NB_CLASSES]
                     cl = int(tf.argmax(cl))
                     list_true.append([b, x1, y1, x2, y2, cl])
-    
     # list of AVG of each class
     average_precisions = []
 
     for cl in range(NB_CLASSES):
         detections = []
         ground_truths = []
-
         # find all boxes of current class
         for detection in list_pred:
             if detection[-1] == cl:
@@ -317,14 +315,13 @@ def MAP(y_true, ypred, iou_thresh = 0.5):
 
         # create a dict, key are image index, value are array [0, 0, 0] to mark the encouter of boxes
         for key, number_boxes in nb_boxes.items():
-            nb_boxes[key] = tf.zeros(number_boxes)
+            nb_boxes[key] = np.zeros(number_boxes)
 
         # sort by probabilitiy
         detections.sort(key=lambda x: x[1], reverse=True)
         # true positive, aka relevant of each box {0, 1}
-        TP = tf.zeros((len(detections)))
+        TP = np.zeros((len(detections)))
         total_true_boxes = len(ground_truths)
-        
         # if empty we skip
         if total_true_boxes == 0:
             continue
@@ -336,9 +333,8 @@ def MAP(y_true, ypred, iou_thresh = 0.5):
             ]
 
             best_iou = 0
-
             for idx, gt in enumerate(ground_truth_img):
-                iou = iou_boxes(detection[2:2+4], gt[2:2+4]) # x is at index 2, take 4 info x1, y1, x2, y2
+                iou = iou_boxes(detection[2:2+4], gt[1:1+4]) # x is at index 2, take 4 info x1, y1, x2, y2
                 if iou > best_iou:
                     best_iou = iou
                     best_gt_idx = idx
@@ -352,9 +348,9 @@ def MAP(y_true, ypred, iou_thresh = 0.5):
 
         TP_cumsum = tf.cumsum(TP, axis=0)
         tmp = tf.range(1, len(TP_cumsum)+1) # 1, 2, 3, .... nb_detection
-        tmp = tf.cast(tmp, tf.float32) # redefine dtype for calculs
+        tmp = tf.cast(tmp, TP_cumsum.dtype) # redefine dtype for calculs
         precisions = tf.divide(TP_cumsum, tmp)
-        TP = tf.cast(TP, tf.float32) # redefine dtype for calculs
+        TP = tf.cast(TP, precisions.dtype) # redefine dtype for calculs
         average_precisions.append(tf.reduce_sum(tf.multiply(precisions, TP))/total_true_boxes)
 
     return sum(average_precisions) / len(average_precisions)
