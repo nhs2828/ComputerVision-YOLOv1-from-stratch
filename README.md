@@ -21,3 +21,4 @@ The prediction on train dataset is quite good
 On the other hand, the prediction on test dataset is not so perfect
 
 ![Capture d’écran 2023-10-11 à 11 08 21](https://github.com/nhs2828/ComputerVision-YOLOv1-from-stratch/assets/78078713/ea40b7a1-aa9c-4809-ac51-eb2fb585609b)
+<img width="334" alt="Capture d’écran 2023-10-12 à 20 13 32" src="https://github.com/nhs2828/ComputerVision-YOLOv1-from-stratch/assets/78078713/a48ca711-7be2-4061-9dbb-ca15129e4e88">
